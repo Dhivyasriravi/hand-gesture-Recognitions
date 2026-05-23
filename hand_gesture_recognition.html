@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hand Gesture Recognition | Dhivyasri Ravi</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0d0d1a; color: #fff; min-height: 100vh; }
+
+    header { text-align: center; padding: 1.5rem 1rem 1rem; background: linear-gradient(135deg, #1a1a2e, #16213e); border-bottom: 1px solid #2a2a4a; }
+    header h1 { font-size: 22px; font-weight: 700; background: linear-gradient(135deg, #7F77DD, #D4537E); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    header p { font-size: 13px; color: #888; margin-top: 4px; }
+    .author-tag { display: inline-block; margin-top: 8px; font-size: 11px; background: #1e1e3a; color: #7F77DD; padding: 3px 12px; border-radius: 999px; border: 1px solid #3a3a6a; }
+
+    .main { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 1.5rem; justify-content: center; max-width: 1100px; margin: 0 auto; }
+
+    /* Camera Panel */
+    .camera-panel { flex: 1; min-width: 300px; max-width: 580px; }
+    .cam-wrapper { position: relative; border-radius: 16px; overflow: hidden; border: 2px solid #2a2a4a; background: #111; }
+    #video { width: 100%; display: block; transform: scaleX(-1); border-radius: 14px; }
+    #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+    .cam-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: linear-gradient(transparent, rgba(0,0,0,0.85)); display: flex; justify-content: space-between; align-items: center; }
+    .fps-badge { font-size: 11px; color: #5DCAA5; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 999px; border: 1px solid #5DCAA533; }
+    .hand-badge { font-size: 11px; color: #EF9F27; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 999px; border: 1px solid #EF9F2733; }
+
+    .cam-controls { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn { padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+    .btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn-start { background: linear-gradient(135deg, #1D9E75, #534AB7); color: #fff; flex: 1; }
+    .btn-stop  { background: linear-gradient(135deg, #993556, #3a1a3a); color: #fff; flex: 1; }
+    .btn-stop:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .status-bar { margin-top: 10px; padding: 8px 14px; background: #1a1a2e; border-radius: 8px; font-size: 12px; color: #888; border: 1px solid #2a2a4a; }
+    .status-bar span { color: #5DCAA5; font-weight: 600; }
+
+    /* Gesture Panel */
+    .gesture-panel { flex: 1; min-width: 260px; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
+
+    .detected-box { background: #1a1a2e; border-radius: 14px; padding: 1.2rem; border: 2px solid #2a2a4a; text-align: center; transition: border-color 0.3s, box-shadow 0.3s; }
+    .detected-box.active { border-color: #7F77DD; box-shadow: 0 0 24px rgba(127,119,221,0.25); }
+    .gesture-emoji { font-size: 52px; line-height: 1; margin-bottom: 8px; transition: transform 0.2s; }
+    .detected-box.active .gesture-emoji { transform: scale(1.15); }
+    .gesture-name { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .gesture-action { font-size: 13px; color: #7F77DD; font-weight: 500; }
+    .confidence-bar-wrap { margin-top: 10px; background: #111; border-radius: 999px; height: 6px; overflow: hidden; }
+    .confidence-bar { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7F77DD, #D4537E); width: 0%; transition: width 0.3s; }
+
+    .gestures-list { background: #1a1a2e; border-radius: 14px; padding: 1rem; border: 1px solid #2a2a4a; }
+    .gestures-list h3 { font-size: 13px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .gesture-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #2a2a4a; }
+    .gesture-item:last-child { border-bottom: none; }
+    .g-emoji { font-size: 22px; width: 32px; text-align: center; }
+    .g-info { flex: 1; }
+    .g-name   { font-size: 13px; font-weight: 600; color: #ddd; }
+    .g-action { font-size: 11px; color: #666; }
+    .g-dot { width: 8px; height: 8px; border-radius: 50%; background: #2a2a4a; transition: background 0.2s; }
+    .g-dot.lit { background: #5DCAA5; box-shadow: 0 0 6px #5DCAA5; }
+
+    .history-box { background: #1a1a2e; border-radius: 14px; padding: 1rem; border: 1px solid #2a2a4a; }
+    .history-box h3 { font-size: 13px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .history-list { display: flex; flex-direction: column; gap: 5px; max-height: 120px; overflow-y: auto; }
+    .history-item { font-size: 12px; color: #aaa; display: flex; align-items: center; gap: 6px; }
+    .history-item .h-time { color: #555; font-size: 11px; }
+
+    /* Simulation panel */
+    .sim-panel { width: 100%; max-width: 960px; margin: 0 auto 1.5rem; padding: 0 1.5rem; }
+    .sim-box { background: #1a1a2e; border-radius: 14px; padding: 1.2rem 1.4rem; border: 1px solid #2a2a4a; }
+    .sim-box h3 { font-size: 14px; font-weight: 700; color: #ddd; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
+    .sim-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sim-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #3a3a6a; background: #111; color: #aaa; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+    .sim-btn:hover { background: #2a2a4a; color: #fff; border-color: #7F77DD; }
+    .sim-btn.triggered { background: linear-gradient(135deg, #7F77DD33, #D4537E33); color: #fff; border-color: #7F77DD; }
+
+    .action-feedback { margin-top: 12px; padding: 10px 14px; background: #111; border-radius: 8px; font-size: 13px; color: #5DCAA5; font-weight: 500; min-height: 38px; display: flex; align-items: center; gap: 8px; border: 1px solid #5DCAA522; }
+
+    footer { text-align: center; padding: 1.5rem; font-size: 12px; color: #444; border-top: 1px solid #1a1a2e; }
+    footer a { color: #7F77DD; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🖐️ Hand Gesture Recognition</h1>
+  <p>Real-time gesture detection using TensorFlow.js HandPose model</p>
+  <span class="author-tag">Built by Dhivyasri Ravi</span>
+</header>
+
+<div class="main">
+  <!-- Camera Panel -->
+  <div class="camera-panel">
+    <div class="cam-wrapper">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <div class="cam-overlay">
+        <span class="fps-badge" id="fps-badge">FPS: --</span>
+        <span class="hand-badge" id="hand-badge">No hand detected</span>
+      </div>
+    </div>
+    <div class="cam-controls">
+      <button class="btn btn-start" id="btn-start" onclick="startCamera()">▶ Start Camera</button>
+      <button class="btn btn-stop"  id="btn-stop"  onclick="stopCamera()" disabled>■ Stop</button>
+    </div>
+    <div class="status-bar" id="status-bar">Status: <span>Ready — click "Start Camera" to begin</span></div>
+  </div>
+
+  <!-- Gesture Panel -->
+  <div class="gesture-panel">
+    <!-- Live detection -->
+    <div class="detected-box" id="detected-box">
+      <div class="gesture-emoji" id="g-emoji">🤚</div>
+      <div class="gesture-name"   id="g-name">Waiting...</div>
+      <div class="gesture-action" id="g-action">Show your hand to the camera</div>
+      <div class="confidence-bar-wrap"><div class="confidence-bar" id="conf-bar"></div></div>
+    </div>
+
+    <!-- Gesture list -->
+    <div class="gestures-list">
+      <h3>Supported Gestures</h3>
+      <div class="gesture-item" id="gi-open_palm">
+        <span class="g-emoji">✋</span>
+        <div class="g-info"><div class="g-name">Open Palm</div><div class="g-action">▶ Play / Pause</div></div>
+        <div class="g-dot" id="dot-open_palm"></div>
+      </div>
+      <div class="gesture-item" id="gi-index_up">
+        <span class="g-emoji">☝️</span>
+        <div class="g-info"><div class="g-name">Index Up</div><div class="g-action">⏭ Next Slide</div></div>
+        <div class="g-dot" id="dot-index_up"></div>
+      </div>
+      <div class="gesture-item" id="gi-peace">
+        <span class="g-emoji">✌️</span>
+        <div class="g-info"><div class="g-name">Peace / V Sign</div><div class="g-action">⏮ Previous Slide</div></div>
+        <div class="g-dot" id="dot-peace"></div>
+      </div>
+      <div class="gesture-item" id="gi-fist">
+        <span class="g-emoji">✊</span>
+        <div class="g-info"><div class="g-name">Fist</div><div class="g-action">⏹ Stop</div></div>
+        <div class="g-dot" id="dot-fist"></div>
+      </div>
+      <div class="gesture-item" id="gi-thumbs_up">
+        <span class="g-emoji">👍</span>
+        <div class="g-info"><div class="g-name">Thumbs Up</div><div class="g-action">🔊 Volume Up</div></div>
+        <div class="g-dot" id="dot-thumbs_up"></div>
+      </div>
+      <div class="gesture-item" id="gi-thumbs_down">
+        <span class="g-emoji">👎</span>
+        <div class="g-info"><div class="g-name">Thumbs Down</div><div class="g-action">🔇 Volume Down</div></div>
+        <div class="g-dot" id="dot-thumbs_down"></div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="history-box">
+      <h3>Detection History</h3>
+      <div class="history-list" id="history-list">
+        <div class="history-item" style="color:#555;font-style:italic">No gestures detected yet...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Simulation / Action Panel -->
+<div class="sim-panel">
+  <div class="sim-box">
+    <h3>⚡ Gesture Actions (Demo) — trigger manually or via webcam</h3>
+    <div class="sim-controls">
+      <button class="sim-btn" id="sim-open_palm"   onclick="triggerAction('open_palm')">✋ Play/Pause</button>
+      <button class="sim-btn" id="sim-index_up"    onclick="triggerAction('index_up')">☝️ Next Slide</button>
+      <button class="sim-btn" id="sim-peace"       onclick="triggerAction('peace')">✌️ Prev Slide</button>
+      <button class="sim-btn" id="sim-fist"        onclick="triggerAction('fist')">✊ Stop</button>
+      <button class="sim-btn" id="sim-thumbs_up"   onclick="triggerAction('thumbs_up')">👍 Vol Up</button>
+      <button class="sim-btn" id="sim-thumbs_down" onclick="triggerAction('thumbs_down')">👎 Vol Down</button>
+    </div>
+    <div class="action-feedback" id="action-feedback">
+      <span>👆 Try clicking a button above, or show a gesture to the webcam!</span>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Built with TensorFlow.js HandPose &amp; Vanilla JS &nbsp;·&nbsp;
+  <a href="#">Dhivyasri Ravi</a> &copy; 2026
+</footer>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const GESTURES = {
+  open_palm:   { emoji:'✋', name:'Open Palm',    action:'▶ Play / Pause',    msg:'▶ Playing / Pausing media!' },
+  index_up:    { emoji:'☝️', name:'Index Up',     action:'⏭ Next Slide',      msg:'⏭ Moving to Next Slide!'   },
+  peace:       { emoji:'✌️', name:'Peace Sign',   action:'⏮ Previous Slide', msg:'⏮ Going to Previous Slide!'},
+  fist:        { emoji:'✊', name:'Fist',          action:'⏹ Stop',            msg:'⏹ Stopping!'               },
+  thumbs_up:   { emoji:'👍', name:'Thumbs Up',    action:'🔊 Volume Up',      msg:'🔊 Volume Up!'              },
+  thumbs_down: { emoji:'👎', name:'Thumbs Down',  action:'🔇 Volume Down',    msg:'🔇 Volume Down!'            },
+};
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let model      = null;
+let stream     = null;
+let running    = false;
+let lastGesture = null;
+let frameCount = 0;
+let lastFpsTime = Date.now();
+let history    = [];
+
+const video    = document.getElementById('video');
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
+
+// ─────────────────────────────────────────────
+//  CAMERA
+// ─────────────────────────────────────────────
+async function startCamera() {
+  setStatus('Loading TensorFlow HandPose model...', '#EF9F27');
+  document.getElementById('btn-start').disabled = true;
+
+  try {
+    // Load model
+    if (!model) {
+      model = await handpose.load();
+    }
+    setStatus('Model loaded! Starting camera...', '#5DCAA5');
+
+    // Get webcam
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width:640, height:480 } });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    running = true;
+    document.getElementById('btn-stop').disabled  = false;
+    document.getElementById('btn-start').disabled = true;
+    setStatus('✅ Camera active — show your hand!', '#5DCAA5');
+    detectLoop();
+  } catch (e) {
+    setStatus('❌ Error: ' + e.message, '#D4537E');
+    document.getElementById('btn-start').disabled = false;
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  document.getElementById('hand-badge').textContent = 'No hand detected';
+  setStatus('Camera stopped.', '#888');
+  resetGestureUI();
+}
+
+// ─────────────────────────────────────────────
+//  DETECTION LOOP
+// ─────────────────────────────────────────────
+async function detectLoop() {
+  if (!running) return;
+
+  const predictions = await model.estimateHands(video);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // FPS
+  frameCount++;
+  const now = Date.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById('fps-badge').textContent = `FPS: ${frameCount}`;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  if (predictions.length > 0) {
+    document.getElementById('hand-badge').textContent = '✋ Hand detected';
+    const hand = predictions[0];
+    drawHand(hand.landmarks);
+    const gesture = classifyGesture(hand.landmarks);
+    if (gesture && gesture !== lastGesture) {
+      lastGesture = gesture;
+      updateGestureUI(gesture);
+      triggerAction(gesture);
+    }
+  } else {
+    document.getElementById('hand-badge').textContent = 'No hand detected';
+    if (lastGesture) { lastGesture = null; resetGestureUI(); }
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+// ─────────────────────────────────────────────
+//  HAND DRAWING
+// ─────────────────────────────────────────────
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17]
+];
+
+function drawHand(landmarks) {
+  const scaleX = canvas.width  / video.videoWidth;
+  const scaleY = canvas.height / video.videoHeight;
+
+  // Skeleton lines
+  ctx.strokeStyle = 'rgba(127,119,221,0.7)';
+  ctx.lineWidth   = 2;
+  CONNECTIONS.forEach(([a,b]) => {
+    ctx.beginPath();
+    ctx.moveTo(landmarks[a][0]*scaleX, landmarks[a][1]*scaleY);
+    ctx.lineTo(landmarks[b][0]*scaleX, landmarks[b][1]*scaleY);
+    ctx.stroke();
+  });
+
+  // Joints
+  landmarks.forEach((pt, i) => {
+    ctx.beginPath();
+    ctx.arc(pt[0]*scaleX, pt[1]*scaleY, i===0?7:4, 0, Math.PI*2);
+    ctx.fillStyle = i===0 ? '#EF9F27' : '#D4537E';
+    ctx.fill();
+  });
+}
+
+// ─────────────────────────────────────────────
+//  GESTURE CLASSIFICATION
+// ─────────────────────────────────────────────
+/*
+  Landmarks index:
+  0=wrist, 1-4=thumb, 5-8=index, 9-12=middle, 13-16=ring, 17-20=pinky
+  Each finger: MCP, PIP, DIP, TIP
+*/
+function isFingerExtended(landmarks, fingerBase, fingerTip) {
+  return landmarks[fingerTip][1] < landmarks[fingerBase][1];
+}
+
+function classifyGesture(lm) {
+  const thumbExtended  = lm[4][0] < lm[3][0]; // thumb tip left of thumb IP (mirrored)
+  const indexExtended  = isFingerExtended(lm, 6, 8);
+  const middleExtended = isFingerExtended(lm, 10, 12);
+  const ringExtended   = isFingerExtended(lm, 14, 16);
+  const pinkyExtended  = isFingerExtended(lm, 18, 20);
+
+  const extCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
+
+  // Fist: no fingers extended
+  if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended && !thumbExtended) {
+    return 'fist';
+  }
+  // Open palm: all 4 fingers + thumb
+  if (extCount === 4) {
+    return 'open_palm';
+  }
+  // Thumbs up: only thumb extended, fingers curled
+  if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    // check thumb pointing up
+    if (lm[4][1] < lm[3][1]) return 'thumbs_up';
+  }
+  // Thumbs down: thumb down
+  if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    if (lm[4][1] > lm[3][1]) return 'thumbs_down';
+  }
+  // Peace/V: index + middle only
+  if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+    return 'peace';
+  }
+  // Index only
+  if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+    return 'index_up';
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────
+//  UI UPDATES
+// ─────────────────────────────────────────────
+function updateGestureUI(gestureKey) {
+  const g = GESTURES[gestureKey];
+  if (!g) return;
+  const box = document.getElementById('detected-box');
+  box.classList.add('active');
+  document.getElementById('g-emoji').textContent  = g.emoji;
+  document.getElementById('g-name').textContent   = g.name;
+  document.getElementById('g-action').textContent = g.action;
+  document.getElementById('conf-bar').style.width = '88%';
+
+  // Light up dot
+  Object.keys(GESTURES).forEach(k => document.getElementById('dot-'+k)?.classList.remove('lit'));
+  document.getElementById('dot-'+gestureKey)?.classList.add('lit');
+
+  // History
+  addHistory(g.emoji, g.name);
+}
+
+function resetGestureUI() {
+  const box = document.getElementById('detected-box');
+  box.classList.remove('active');
+  document.getElementById('g-emoji').textContent  = '🤚';
+  document.getElementById('g-name').textContent   = 'Waiting...';
+  document.getElementById('g-action').textContent = 'Show your hand to the camera';
+  document.getElementById('conf-bar').style.width = '0%';
+  Object.keys(GESTURES).forEach(k => document.getElementById('dot-'+k)?.classList.remove('lit'));
+}
+
+function addHistory(emoji, name) {
+  const now = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  history.unshift({ emoji, name, time: now });
+  if (history.length > 8) history.pop();
+  const list = document.getElementById('history-list');
+  list.innerHTML = history.map(h =>
+    `<div class="history-item">${h.emoji} <span>${h.name}</span> <span class="h-time">${h.time}</span></div>`
+  ).join('');
+}
+
+// ─────────────────────────────────────────────
+//  ACTION TRIGGER
+// ─────────────────────────────────────────────
+let actionTimeout = null;
+function triggerAction(key) {
+  const g = GESTURES[key];
+  if (!g) return;
+  const fb = document.getElementById('action-feedback');
+  fb.innerHTML = `<span style="color:#5DCAA5">${g.emoji} ${g.msg}</span>`;
+
+  // Highlight sim button
+  const btn = document.getElementById('sim-'+key);
+  if (btn) {
+    btn.classList.add('triggered');
+    clearTimeout(actionTimeout);
+    actionTimeout = setTimeout(() => {
+      document.querySelectorAll('.sim-btn').forEach(b => b.classList.remove('triggered'));
+    }, 1200);
+  }
+
+  updateGestureUI(key);
+}
+
+function setStatus(msg, color='#5DCAA5') {
+  document.getElementById('status-bar').innerHTML = `Status: <span style="color:${color}">${msg}</span>`;
+}
+</script>
+</body>
+</html>
